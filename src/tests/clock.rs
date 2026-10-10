@@ -42,7 +42,7 @@ fn consumption_deadline_is_checked_inside_commit_and_after_the_wait() {
             assert_eq!(store.committed.load(Ordering::SeqCst), 0);
         } else {
             assert_eq!(store.committed.load(Ordering::SeqCst), 1);
-            if completed >= 200 || completed < 100 {
+            if !(100..200).contains(&completed) {
                 assert!(result.is_err());
                 assert_eq!(result.unwrap_err(), Error::Rejected);
             } else {
