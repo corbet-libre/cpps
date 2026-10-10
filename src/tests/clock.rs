@@ -37,11 +37,13 @@ fn consumption_deadline_is_checked_inside_commit_and_after_the_wait() {
         let result =
             block_on(token.consume(&store, "operation", &|| store.clock.load(Ordering::SeqCst)));
         if wait_before_commit {
+            assert!(result.is_err());
             assert_eq!(result.unwrap_err(), Error::Consumption);
             assert_eq!(store.committed.load(Ordering::SeqCst), 0);
         } else {
             assert_eq!(store.committed.load(Ordering::SeqCst), 1);
             if completed >= 200 || completed < 100 {
+                assert!(result.is_err());
                 assert_eq!(result.unwrap_err(), Error::Rejected);
             } else {
                 assert_eq!(result.unwrap().expires_at(), 200);
