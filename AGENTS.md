@@ -1,19 +1,17 @@
 # Agent instructions
 
-Write all code comments and documentation in English.
+Write code and documentation in English. cpps is a reusable Privacy Pass domain
+library. Authenticate actual protocol tokens using maintained upstream code;
+never infer personhood, device provenance or biometric uniqueness from a token.
+Caller-owned atomic state enforces token consumption. All library data stays in
+RAM: no database connections, SQL, file caches or hidden persistence.
 
-## Product boundary
+Requested full results use explicit private APIs. Default diagnostics and cvld
+projections expose only necessary facts. No local cryptographic primitives.
+Owned Rust forbids unsafe code. LGPL-3.0-only WITH LGPL-3.0-linking-exception;
+no GPL/AGPL-only implementation dependencies.
 
-- Privacy Pass admission gate for cvld: proof of a real device without identifying it.
-- Verifies Privacy Pass tokens from trusted issuers and returns an opaque gate proof bound to its configured provider.
-- Never links a token to a device identity or a member beyond the opaque proof.
-- Raw factor data never reaches `cvld`: it receives only an opaque proof bound to its configured provider. No raw data in output, logs, errors or fixtures.
-- No own security primitives: a thin wrapper around the established best-practice library for the factor.
-- This crate is LGPL-3.0-only WITH LGPL-3.0-linking-exception. Do not add implementation code available only under the full GPL or AGPL.
-- Tests use fixtures only; no live calls to third-party providers.
-
-## Quality boundary
-
-- `cargo fmt --check`, `cargo clippy --all-targets` (no warnings),
-  `cargo test` — all green before every commit. No local workstation
-  builds; use GHA, Crow as fallback.
+Never spend, call live providers, register accounts or publish packages. Tests
+use real protocol libraries and inert local fixtures. Workstations edit/format;
+Crow compiles/tests committed candidates. Preserve fmt, Clippy, native/Wasm and
+coverage checks. Record unexecuted live interoperability probes honestly.

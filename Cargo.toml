@@ -3,9 +3,9 @@ name = "cpps"
 version = "0.0.0"
 edition = "2024"
 rust-version = "1.88"
-description = "Privacy Pass admission gate for cvld: proof of a real device without identifying it"
+description = "Privacy Pass verification and caller-owned atomic token consumption"
 license = "LGPL-3.0-only WITH LGPL-3.0-linking-exception"
-repository = "https://github.com/corbet-foss/cpps"
+repository = "https://git.corbet.ch/corbet-foss/cpps"
 readme = "README.md"
 publish = false
 include = ["Cargo.toml", "src/**", "README.md", "LICENSE", "LICENSE.md", "LICENSES/LGPL-3.0-only.txt", "LICENSES/LGPL-3.0-linking-exception.txt", "LICENSES/GPL-3.0-only.txt"]
@@ -16,3 +16,16 @@ crate-type = ["rlib"]
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
+
+[dependencies]
+privacypass = { git = "https://github.com/raphaelrobert/privacypass", branch = "main" }
+blind-rsa-signatures = "0.17"
+async-trait = "0.1"
+typenum = "1"
+sha2 = "0.11"
+thiserror = "2"
+zeroize = "1"
+
+[dev-dependencies]
+privacypass = { git = "https://github.com/raphaelrobert/privacypass", branch = "main", features = ["test-utils"] }
+futures = "0.3"
