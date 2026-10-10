@@ -45,7 +45,7 @@ impl PublicVerifier {
             source: "Local public-token verification; no network; issuance and compute excluded"
                 .into(),
             valid_until: challenge.expires_at,
-            binding: format!("{:x}", hash.finalize()),
+            binding: hex::encode(hash.finalize()),
         })
     }
     /// Execute the real verification transformation against local fixtures only.

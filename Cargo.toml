@@ -24,6 +24,7 @@ blind-rsa-signatures = "0.17"
 async-trait = "0.1"
 typenum = "1"
 sha2 = "0.11"
+hex = "0.4"
 thiserror = "2"
 zeroize = "1"
 
