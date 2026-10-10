@@ -1,7 +1,9 @@
 //! RFC 9578 public-token verification; no device or person identity is inferred.
 #![forbid(unsafe_code)]
 
+mod planning;
 mod upstream;
+pub use planning::Simulation;
 
 use blind_rsa_signatures::{Deterministic, PSS, PublicKey, Sha384};
 use privacypass::{
@@ -44,8 +46,8 @@ impl PublicVerifier {
             return Err(Error::Configuration);
         }
         let key = PublicKey::from_spki(spki).map_err(|_| Error::Configuration)?;
-        let key_id = privacypass::public_tokens::public_key_to_token_key_id(&key)
-            .map_err(|_| Error::Configuration)?;
+        let encoded = key.to_spki().map_err(|_| Error::Configuration)?;
+        let key_id = Sha256::digest(encoded).into();
         Ok(Self {
             issuer,
             origin,
@@ -74,6 +76,8 @@ impl PublicVerifier {
         );
         let wire = token.serialize().map_err(|_| Error::Configuration)?;
         Ok(Challenge {
+            issuer: self.issuer.clone(),
+            origin: self.origin.clone(),
             scope,
             wire,
             digest: token.digest().map_err(|_| Error::Configuration)?,
@@ -91,7 +95,12 @@ impl PublicVerifier {
         now: u64,
         return_token: bool,
     ) -> Result<VerifiedToken, Error> {
-        if now >= challenge.expires_at || bytes.len() != 354 || challenge.key_id != self.key_id {
+        if now >= challenge.expires_at
+            || bytes.len() != 354
+            || challenge.key_id != self.key_id
+            || challenge.issuer != self.issuer
+            || challenge.origin != self.origin
+        {
             return Err(Error::Rejected);
         }
         let mut input = bytes;
@@ -120,6 +129,8 @@ impl PublicVerifier {
 
 /// Server-created challenge, not deserializable from member input.
 pub struct Challenge {
+    issuer: String,
+    origin: String,
     scope: String,
     wire: Vec<u8>,
     digest: [u8; 32],

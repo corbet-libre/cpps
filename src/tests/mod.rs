@@ -45,7 +45,7 @@ fn fixture() -> &'static Fixture {
         })
     })
 }
-fn verifier() -> PublicVerifier {
+pub(crate) fn verifier() -> PublicVerifier {
     PublicVerifier::new(
         "issuer.example".into(),
         "origin.example".into(),
@@ -220,4 +220,75 @@ fn concurrent_different_actions_have_one_winner() {
             .sum::<usize>(),
         1
     );
+}
+
+#[test]
+fn cost_binding_and_simulation_are_distinct() {
+    block_on(async {
+        use cfbk::cost::{Amount, CostOrder, Mode, Offer, Outcome, Plan, Unit};
+        use cfbk::{Candidate, Config};
+        let v = verifier();
+        let c = challenge(&v);
+        let quote = v.preview(&c, &fixture().bytes, Mode::Simulation).unwrap();
+        let binding = quote.binding.clone();
+        let zero = Amount {
+            unit: Unit {
+                code: "provider-api-calls".into(),
+                scale: 0,
+            },
+            atoms: 0,
+        };
+        let plan = Plan::new(
+            vec![Offer {
+                candidate: Candidate::new("cpps", ["public-token"]),
+                quote,
+            }],
+            Config::new(["cpps"], ["public-token"]),
+            CostOrder::Configured,
+            zero.clone(),
+            1,
+            Mode::Simulation,
+            100,
+        )
+        .unwrap();
+        let mut cascade = plan.start();
+        let permit = cascade.begin(100).unwrap();
+        permit.validate(&binding, Mode::Simulation, 100).unwrap();
+        assert!(permit.validate(&binding, Mode::Production, 100).is_err());
+        assert!(v.simulate(&c, &fixture().bytes, 100).await.accepted);
+        assert!(!v.simulate(&c, &fixture().bytes, 200).await.accepted);
+        cascade.complete(Outcome::Success, Some(zero)).unwrap();
+        assert!(cascade.begin(100).is_err());
+        for mode in [Mode::Sandbox, Mode::Production] {
+            assert_ne!(
+                binding,
+                v.preview(&c, &fixture().bytes, mode).unwrap().binding
+            );
+        }
+        assert!(v.preview(&c, &[0; 355], Mode::Production).is_err());
+        let other = PublicVerifier::new(
+            "other.example".into(),
+            "origin.example".into(),
+            &fixture().spki,
+        )
+        .unwrap();
+        assert!(
+            other
+                .verify(&c, &fixture().bytes, 100, false)
+                .await
+                .is_err()
+        );
+        let other = PublicVerifier::new(
+            "issuer.example".into(),
+            "other.example".into(),
+            &fixture().spki,
+        )
+        .unwrap();
+        assert!(
+            other
+                .verify(&c, &fixture().bytes, 100, false)
+                .await
+                .is_err()
+        );
+    });
 }
