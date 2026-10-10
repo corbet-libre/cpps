@@ -59,7 +59,14 @@ fn challenge(v: &PublicVerifier) -> Challenge {
 #[derive(Default)]
 struct Claims(Mutex<BTreeMap<(String, [u8; 32]), String>>);
 impl ConsumptionStore for Claims {
-    async fn consume(&self, scope: &str, marker: [u8; 32], operation: &str) -> Result<(), Error> {
+    async fn consume(
+        &self,
+        scope: &str,
+        marker: [u8; 32],
+        operation: &str,
+        valid_until: u64,
+    ) -> Result<(), Error> {
+        assert!(valid_until > 100);
         let mut claims = self.0.lock().unwrap();
         match claims.get(&(scope.to_owned(), marker)) {
             Some(prior) if prior != operation => Err(Error::Consumption),
@@ -88,23 +95,29 @@ fn real_protocol_roundtrip_and_atomic_usage() {
         let store = Claims::default();
         assert_eq!(
             verified
-                .consume(&store, "action-a", 100)
+                .consume(&store, "action-a", &|| 100)
                 .await
                 .unwrap()
                 .expires_at(),
             200
         );
-        assert!(verified.consume(&store, "action-a", 101).await.is_ok());
+        assert!(verified.consume(&store, "action-a", &|| 101).await.is_ok());
         assert_eq!(
-            verified.consume(&store, "action-b", 101).await.unwrap_err(),
+            verified
+                .consume(&store, "action-b", &|| 101)
+                .await
+                .unwrap_err(),
             Error::Consumption
         );
         assert_eq!(
-            verified.consume(&store, "", 101).await.unwrap_err(),
+            verified.consume(&store, "", &|| 101).await.unwrap_err(),
             Error::Configuration
         );
         assert_eq!(
-            verified.consume(&store, "action-a", 200).await.unwrap_err(),
+            verified
+                .consume(&store, "action-a", &|| 200)
+                .await
+                .unwrap_err(),
             Error::Rejected
         );
         assert!(
@@ -120,7 +133,7 @@ fn real_protocol_roundtrip_and_atomic_usage() {
             format!("{verified:?}"),
             format!(
                 "{:?}",
-                verified.consume(&store, "action-a", 100).await.unwrap()
+                verified.consume(&store, "action-a", &|| 100).await.unwrap()
             ),
         ] {
             assert!(debug.contains("redacted"));
@@ -212,7 +225,7 @@ fn concurrent_different_actions_have_one_winner() {
         .map(|operation| {
             let token = token.clone();
             let store = store.clone();
-            std::thread::spawn(move || block_on(token.consume(&*store, operation, 100)).is_ok())
+            std::thread::spawn(move || block_on(token.consume(&*store, operation, &|| 100)).is_ok())
         })
         .collect();
     assert_eq!(
@@ -311,3 +324,5 @@ fn tokens_cannot_cross_scope_or_extend_validity_with_reused_caller_context() {
         }
     });
 }
+
+mod clock;

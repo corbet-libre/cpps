@@ -172,13 +172,20 @@ impl VerifiedToken {
         &self,
         store: &S,
         operation: &str,
-        now: u64,
+        clock: &impl Fn() -> u64,
     ) -> Result<ConsumedToken, Error> {
         identifier(operation)?;
+        let now = clock();
         if now >= self.expires_at {
             return Err(Error::Rejected);
         }
-        store.consume(&self.scope, self.marker, operation).await?;
+        store
+            .consume(&self.scope, self.marker, operation, self.expires_at)
+            .await?;
+        let completed = clock();
+        if completed < now || completed >= self.expires_at {
+            return Err(Error::Rejected);
+        }
         Ok(ConsumedToken {
             expires_at: self.expires_at,
         })
@@ -190,11 +197,14 @@ impl VerifiedToken {
 /// Storage failures must refuse. No DB connector or process-local counter ships.
 pub trait ConsumptionStore: Sync {
     /// Consume only the opaque marker and necessary operational binding.
+    /// Check a trusted fresh clock against `valid_until` within the atomic commit,
+    /// after any queue wait; expiry leaves state unchanged.
     fn consume(
         &self,
         scope: &str,
         marker: [u8; 32],
         operation: &str,
+        valid_until: u64,
     ) -> impl Future<Output = Result<(), Error>> + Send;
 }
 /// Minimal receipt, constructible only after authentication and atomic claim.
