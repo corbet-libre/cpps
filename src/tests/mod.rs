@@ -142,6 +142,9 @@ fn reject_malformed_forged_wrong_context_and_expired_tokens() {
         for bytes in [&[][..], &fixture().bytes[..353]] {
             assert!(v.verify(&c, bytes, 100, false).await.is_err());
         }
+        let mut private_type = fixture().bytes.clone();
+        private_type[1] = 1;
+        assert!(v.verify(&c, &private_type, 100, false).await.is_err());
         for index in [0, 1, 2, 34, 66, 353] {
             let mut bad = fixture().bytes.clone();
             bad[index] ^= 0x80;

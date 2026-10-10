@@ -105,8 +105,8 @@ impl PublicVerifier {
         }
         let mut input = bytes;
         let token = Token::<U256>::tls_deserialize(&mut input).map_err(|_| Error::Rejected)?;
-        if !input.is_empty()
-            || token.token_type() != TokenType::Public
+        // Token<U256> consumes the fixed 354-byte representation checked above.
+        if token.token_type() != TokenType::Public
             || token.challenge_digest() != &challenge.digest
             || token.token_key_id() != &self.key_id
         {
