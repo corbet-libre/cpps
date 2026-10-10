@@ -25,12 +25,12 @@ fn fixture() -> &'static Fixture {
             let store = IssuerMemoryKeyStore::default();
             let issuer = IssuerServer::new();
             let key = issuer.create_keypair(&mut rng(), &store).await.unwrap();
-            let challenge = TokenChallenge::new(
-                TokenType::Public,
-                "issuer.example",
-                Some([7; 32]),
-                &["origin.example".into()],
-            );
+            let spki = serialize_public_key(&key).unwrap();
+            let verifier =
+                PublicVerifier::new("issuer.example".into(), "origin.example".into(), &spki)
+                    .unwrap();
+            let bound = verifier.challenge("scope".into(), [7; 32], 200).unwrap();
+            let challenge = TokenChallenge::deserialize(bound.wire()).unwrap();
             let (request, state) = TokenRequest::new(&mut rng(), key.clone(), &challenge).unwrap();
             let token = issuer
                 .issue_token_response(&store, request)
@@ -39,7 +39,7 @@ fn fixture() -> &'static Fixture {
                 .issue_token(&state)
                 .unwrap();
             Fixture {
-                spki: serialize_public_key(&key).unwrap(),
+                spki,
                 bytes: token.tls_serialize_detached().unwrap(),
             }
         })
@@ -293,5 +293,21 @@ fn cost_binding_and_simulation_are_distinct() {
                 .await
                 .is_err()
         );
+    });
+}
+
+#[test]
+fn tokens_cannot_cross_scope_or_extend_validity_with_reused_caller_context() {
+    block_on(async {
+        let verifier = verifier();
+        for (scope, expiry) in [("different", 200), ("scope", 201)] {
+            let changed = verifier.challenge(scope.into(), [7; 32], expiry).unwrap();
+            assert!(
+                verifier
+                    .verify(&changed, &fixture().bytes, 100, false)
+                    .await
+                    .is_err()
+            );
+        }
     });
 }

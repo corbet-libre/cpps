@@ -68,10 +68,16 @@ impl PublicVerifier {
         if context == [0; 32] || expires_at == 0 {
             return Err(Error::Configuration);
         }
+        let mut binding = Sha256::new();
+        binding.update(b"cpps:challenge:v1\0");
+        binding.update((scope.len() as u64).to_be_bytes());
+        binding.update(scope.as_bytes());
+        binding.update(expires_at.to_be_bytes());
+        binding.update(context);
         let token = TokenChallenge::new(
             TokenType::Public,
             &self.issuer,
-            Some(context),
+            Some(binding.finalize().into()),
             std::slice::from_ref(&self.origin),
         );
         let wire = token.serialize().map_err(|_| Error::Configuration)?;

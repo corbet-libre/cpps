@@ -6,7 +6,9 @@ trusted issuer/origin configuration and an authenticated issuer SPKI key.
 No issuer discovery, network access, secret acquisition or provider fee occurs.
 
 `PublicVerifier::challenge` creates a challenge from fresh, unpredictable caller
-context and an exclusive expiry. The caller binds that context to its actual
+context and an exclusive expiry. The scope, expiry and fresh context are hashed
+into the protocol redemption context, so a repeated caller nonce cannot move a
+token to another application scope or extend its lifetime. The caller binds that context to its actual
 subject/action and retains continuation only as needed. `verify` checks exact
 binary length, type, complete key ID, challenge digest, expiry and the upstream
 signature. It cannot be turned into verification by deserializing a result.
