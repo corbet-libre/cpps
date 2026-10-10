@@ -23,7 +23,7 @@ stores no issuer/member graph. No package has been published or provider enabled
 ## Validation
 
 Tests exercise real blind-RSA issuance, unblinding, verification, tampering,
-exact operation retries and competing atomic consumption. Crow validation is
+exact operation retries and competing atomic consumption. CI validation is
 required before claiming the implementation tested; live issuer interoperability
 is unrun. [Coverage contract](docs/COVERAGE.md).
 
