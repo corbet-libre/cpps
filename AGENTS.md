@@ -12,6 +12,6 @@ Owned Rust forbids unsafe code. LGPL-3.0-only WITH LGPL-3.0-linking-exception;
 no GPL/AGPL-only implementation dependencies.
 
 Never spend, call live providers, register accounts or publish packages. Tests
-use real protocol libraries and inert local fixtures. Workstations edit/format;
+use real protocol libraries and inert local fixtures. Local checkouts edit/format;
 Crow compiles/tests committed candidates. Preserve fmt, Clippy, native/Wasm and
 coverage checks. Record unexecuted live interoperability probes honestly.
