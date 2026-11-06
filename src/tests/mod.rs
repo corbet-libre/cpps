@@ -18,38 +18,43 @@ struct Fixture {
     spki: Vec<u8>,
     bytes: Vec<u8>,
 }
-fn fixture() -> &'static Fixture {
+// The fixture is built by awaiting it inside the test's own executor. A test that
+// already drives a future must never nest a second block_on: a nested executor is
+// rejected at run time (EnterError), and whether the nesting is reached depends on
+// which test initialises the fixture first.
+async fn fixture() -> &'static Fixture {
     static FIXTURE: OnceLock<Fixture> = OnceLock::new();
-    FIXTURE.get_or_init(|| {
-        block_on(async {
-            let store = IssuerMemoryKeyStore::default();
-            let issuer = IssuerServer::new();
-            let key = issuer.create_keypair(&mut rng(), &store).await.unwrap();
-            let spki = serialize_public_key(&key).unwrap();
-            let verifier =
-                PublicVerifier::new("issuer.example".into(), "origin.example".into(), &spki)
-                    .unwrap();
-            let bound = verifier.challenge("scope".into(), [7; 32], 200).unwrap();
-            let challenge = TokenChallenge::deserialize(bound.wire()).unwrap();
-            let (request, state) = TokenRequest::new(&mut rng(), key.clone(), &challenge).unwrap();
-            let token = issuer
-                .issue_token_response(&store, request)
-                .await
-                .unwrap()
-                .issue_token(&state)
-                .unwrap();
-            Fixture {
-                spki,
-                bytes: token.tls_serialize_detached().unwrap(),
-            }
-        })
-    })
+    if let Some(fixture) = FIXTURE.get() {
+        return fixture;
+    }
+    let store = IssuerMemoryKeyStore::default();
+    let issuer = IssuerServer::new();
+    let key = issuer.create_keypair(&mut rng(), &store).await.unwrap();
+    let spki = serialize_public_key(&key).unwrap();
+    let verifier =
+        PublicVerifier::new("issuer.example".into(), "origin.example".into(), &spki).unwrap();
+    let bound = verifier.challenge("scope".into(), [7; 32], 200).unwrap();
+    let challenge = TokenChallenge::deserialize(bound.wire()).unwrap();
+    let (request, state) = TokenRequest::new(&mut rng(), key.clone(), &challenge).unwrap();
+    let token = issuer
+        .issue_token_response(&store, request)
+        .await
+        .unwrap()
+        .issue_token(&state)
+        .unwrap();
+    // Two tests may build concurrently; the first value published wins and every
+    // caller below reads that one, so a verifier never pairs with foreign bytes.
+    let _ = FIXTURE.set(Fixture {
+        spki,
+        bytes: token.tls_serialize_detached().unwrap(),
+    });
+    FIXTURE.get().unwrap()
 }
-pub(crate) fn verifier() -> PublicVerifier {
+pub(crate) async fn verifier() -> PublicVerifier {
     PublicVerifier::new(
         "issuer.example".into(),
         "origin.example".into(),
-        &fixture().spki,
+        &fixture().await.spki,
     )
     .unwrap()
 }
@@ -80,7 +85,7 @@ impl ConsumptionStore for Claims {
 #[test]
 fn real_protocol_roundtrip_and_atomic_usage() {
     block_on(async {
-        let v = verifier();
+        let v = verifier().await;
         let c = challenge(&v);
         assert_eq!(c.expires_at(), 200);
         assert_eq!(
@@ -90,8 +95,11 @@ fn real_protocol_roundtrip_and_atomic_usage() {
                 .unwrap(),
             c.digest
         );
-        let verified = v.verify(&c, &fixture().bytes, 100, true).await.unwrap();
-        assert_eq!(verified.original().unwrap(), &fixture().bytes);
+        let verified = v
+            .verify(&c, &fixture().await.bytes, 100, true)
+            .await
+            .unwrap();
+        assert_eq!(verified.original().unwrap(), &fixture().await.bytes);
         let store = Claims::default();
         assert_eq!(
             verified
@@ -121,7 +129,7 @@ fn real_protocol_roundtrip_and_atomic_usage() {
             Error::Rejected
         );
         assert!(
-            v.verify(&c, &fixture().bytes, 100, false)
+            v.verify(&c, &fixture().await.bytes, 100, false)
                 .await
                 .unwrap()
                 .original()
@@ -144,22 +152,22 @@ fn real_protocol_roundtrip_and_atomic_usage() {
 #[test]
 fn reject_malformed_forged_wrong_context_and_expired_tokens() {
     block_on(async {
-        let v = verifier();
+        let v = verifier().await;
         let c = challenge(&v);
         assert_eq!(
-            v.verify(&c, &fixture().bytes, 200, false)
+            v.verify(&c, &fixture().await.bytes, 200, false)
                 .await
                 .unwrap_err(),
             Error::Rejected
         );
-        for bytes in [&[][..], &fixture().bytes[..353]] {
+        for bytes in [&[][..], &fixture().await.bytes[..353]] {
             assert!(v.verify(&c, bytes, 100, false).await.is_err());
         }
-        let mut private_type = fixture().bytes.clone();
+        let mut private_type = fixture().await.bytes.clone();
         private_type[1] = 1;
         assert!(v.verify(&c, &private_type, 100, false).await.is_err());
         for index in [0, 1, 2, 34, 66, 353] {
-            let mut bad = fixture().bytes.clone();
+            let mut bad = fixture().await.bytes.clone();
             bad[index] ^= 0x80;
             assert_eq!(
                 v.verify(&c, &bad, 100, false).await.unwrap_err(),
@@ -168,19 +176,23 @@ fn reject_malformed_forged_wrong_context_and_expired_tokens() {
         }
         let other = v.challenge("scope".into(), [8; 32], 200).unwrap();
         assert!(
-            v.verify(&other, &fixture().bytes, 100, false)
+            v.verify(&other, &fixture().await.bytes, 100, false)
                 .await
                 .is_err()
         );
         let mut c = c;
         c.key_id[0] ^= 1;
-        assert!(v.verify(&c, &fixture().bytes, 100, false).await.is_err());
+        assert!(
+            v.verify(&c, &fixture().await.bytes, 100, false)
+                .await
+                .is_err()
+        );
     });
 }
 #[test]
 fn configuration_and_upstream_sequencing() {
     block_on(async {
-        let v = verifier();
+        let v = verifier().await;
         for bad in [
             "".to_string(),
             "a".repeat(254),
@@ -188,9 +200,12 @@ fn configuration_and_upstream_sequencing() {
             "a\nb".into(),
         ] {
             assert!(
-                PublicVerifier::new(bad.clone(), "valid.example".into(), &fixture().spki).is_err()
+                PublicVerifier::new(bad.clone(), "valid.example".into(), &fixture().await.spki)
+                    .is_err()
             );
-            assert!(PublicVerifier::new("valid.example".into(), bad, &fixture().spki).is_err());
+            assert!(
+                PublicVerifier::new("valid.example".into(), bad, &fixture().await.spki).is_err()
+            );
         }
         for bytes in [vec![], vec![0; 4097], vec![1; 20]] {
             assert!(
@@ -216,26 +231,35 @@ fn configuration_and_upstream_sequencing() {
 }
 #[test]
 fn concurrent_different_actions_have_one_winner() {
-    let v = verifier();
-    let c = challenge(&v);
-    let token = Arc::new(block_on(v.verify(&c, &fixture().bytes, 100, false)).unwrap());
-    let store = Arc::new(Claims::default());
-    let handles: Vec<_> = ["a", "b"]
-        .into_iter()
-        .map(|operation| {
-            let token = token.clone();
-            let store = store.clone();
-            std::thread::spawn(move || block_on(token.consume(&*store, operation, &|| 100)).is_ok())
-        })
-        .collect();
-    assert_eq!(
-        handles
+    block_on(async {
+        let v = verifier().await;
+        let c = challenge(&v);
+        let token = Arc::new(
+            v.verify(&c, &fixture().await.bytes, 100, false)
+                .await
+                .unwrap(),
+        );
+        let store = Arc::new(Claims::default());
+        let handles: Vec<_> = ["a", "b"]
             .into_iter()
-            .filter(|h| h.thread().id() != std::thread::current().id())
-            .map(|h| h.join().unwrap() as usize)
-            .sum::<usize>(),
-        1
-    );
+            .map(|operation| {
+                let token = token.clone();
+                let store = store.clone();
+                // Each racer blocks on its own thread, outside this executor.
+                std::thread::spawn(move || {
+                    block_on(token.consume(&*store, operation, &|| 100)).is_ok()
+                })
+            })
+            .collect();
+        assert_eq!(
+            handles
+                .into_iter()
+                .filter(|h| h.thread().id() != std::thread::current().id())
+                .map(|h| h.join().unwrap() as usize)
+                .sum::<usize>(),
+            1
+        );
+    });
 }
 
 #[test]
@@ -243,9 +267,11 @@ fn cost_binding_and_simulation_are_distinct() {
     block_on(async {
         use cfbk::cost::{Amount, CostOrder, Mode, Offer, Outcome, Plan, Unit};
         use cfbk::{Candidate, Config};
-        let v = verifier();
+        let v = verifier().await;
         let c = challenge(&v);
-        let quote = v.preview(&c, &fixture().bytes, Mode::Simulation).unwrap();
+        let quote = v
+            .preview(&c, &fixture().await.bytes, Mode::Simulation)
+            .unwrap();
         let binding = quote.binding.clone();
         let zero = Amount {
             unit: Unit {
@@ -271,38 +297,38 @@ fn cost_binding_and_simulation_are_distinct() {
         let permit = cascade.begin(100).unwrap();
         permit.validate(&binding, Mode::Simulation, 100).unwrap();
         assert!(permit.validate(&binding, Mode::Production, 100).is_err());
-        assert!(v.simulate(&c, &fixture().bytes, 100).await.accepted);
-        assert!(!v.simulate(&c, &fixture().bytes, 200).await.accepted);
+        assert!(v.simulate(&c, &fixture().await.bytes, 100).await.accepted);
+        assert!(!v.simulate(&c, &fixture().await.bytes, 200).await.accepted);
         cascade.complete(Outcome::Success, Some(zero)).unwrap();
         assert!(cascade.begin(100).is_err());
         for mode in [Mode::Sandbox, Mode::Production] {
             assert_ne!(
                 binding,
-                v.preview(&c, &fixture().bytes, mode).unwrap().binding
+                v.preview(&c, &fixture().await.bytes, mode).unwrap().binding
             );
         }
         assert!(v.preview(&c, &[0; 355], Mode::Production).is_err());
         let other = PublicVerifier::new(
             "other.example".into(),
             "origin.example".into(),
-            &fixture().spki,
+            &fixture().await.spki,
         )
         .unwrap();
         assert!(
             other
-                .verify(&c, &fixture().bytes, 100, false)
+                .verify(&c, &fixture().await.bytes, 100, false)
                 .await
                 .is_err()
         );
         let other = PublicVerifier::new(
             "issuer.example".into(),
             "other.example".into(),
-            &fixture().spki,
+            &fixture().await.spki,
         )
         .unwrap();
         assert!(
             other
-                .verify(&c, &fixture().bytes, 100, false)
+                .verify(&c, &fixture().await.bytes, 100, false)
                 .await
                 .is_err()
         );
@@ -312,12 +338,12 @@ fn cost_binding_and_simulation_are_distinct() {
 #[test]
 fn tokens_cannot_cross_scope_or_extend_validity_with_reused_caller_context() {
     block_on(async {
-        let verifier = verifier();
+        let verifier = verifier().await;
         for (scope, expiry) in [("different", 200), ("scope", 201)] {
             let changed = verifier.challenge(scope.into(), [7; 32], expiry).unwrap();
             assert!(
                 verifier
-                    .verify(&changed, &fixture().bytes, 100, false)
+                    .verify(&changed, &fixture().await.bytes, 100, false)
                     .await
                     .is_err()
             );

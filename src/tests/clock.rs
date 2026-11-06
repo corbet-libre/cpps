@@ -24,33 +24,38 @@ impl ConsumptionStore for DelayedConsumption {
 }
 #[test]
 fn consumption_deadline_is_checked_inside_commit_and_after_the_wait() {
-    let verifier = verifier();
-    let token =
-        block_on(verifier.verify(&challenge(&verifier), &fixture().bytes, 100, true)).unwrap();
-    for (completed, wait_before_commit) in [(200, true), (200, false), (99, false)] {
-        let store = DelayedConsumption {
-            clock: AtomicU64::new(100),
-            completed,
-            wait_before_commit,
-            committed: AtomicU64::new(0),
-        };
-        let result =
-            block_on(token.consume(&store, "operation", &|| store.clock.load(Ordering::SeqCst)));
-        if wait_before_commit {
-            assert!(result.is_err());
-            assert_eq!(result.unwrap_err(), Error::Consumption);
-            assert_eq!(store.committed.load(Ordering::SeqCst), 0);
-        } else {
-            assert_eq!(store.committed.load(Ordering::SeqCst), 1);
-            if !(100..200).contains(&completed) {
+    block_on(async {
+        let verifier = verifier().await;
+        let token = verifier
+            .verify(&challenge(&verifier), &fixture().await.bytes, 100, true)
+            .await
+            .unwrap();
+        for (completed, wait_before_commit) in [(200, true), (200, false), (99, false)] {
+            let store = DelayedConsumption {
+                clock: AtomicU64::new(100),
+                completed,
+                wait_before_commit,
+                committed: AtomicU64::new(0),
+            };
+            let result = token
+                .consume(&store, "operation", &|| store.clock.load(Ordering::SeqCst))
+                .await;
+            if wait_before_commit {
                 assert!(result.is_err());
-                assert_eq!(result.unwrap_err(), Error::Rejected);
+                assert_eq!(result.unwrap_err(), Error::Consumption);
+                assert_eq!(store.committed.load(Ordering::SeqCst), 0);
             } else {
-                assert_eq!(result.unwrap().expires_at(), 200);
+                assert_eq!(store.committed.load(Ordering::SeqCst), 1);
+                if !(100..200).contains(&completed) {
+                    assert!(result.is_err());
+                    assert_eq!(result.unwrap_err(), Error::Rejected);
+                } else {
+                    assert_eq!(result.unwrap().expires_at(), 200);
+                }
             }
+            assert_eq!(token.original().unwrap(), &fixture().await.bytes);
         }
-        assert_eq!(token.original().unwrap(), &fixture().bytes);
-    }
+    });
 }
 
 async fn yield_once() {
