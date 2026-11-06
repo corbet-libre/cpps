@@ -15,6 +15,9 @@ render_schema = 2
 
 [jobs.verify]
 scheduler = "forgejo"
+# 2026-11-06: no incremental compilation for this job. tests::configuration_and_upstream_sequencing calls a futures LocalPool block_on from inside another executor
+# (EnterError, futures-executor 0.3.34 local_pool.rs:80); it passes only by luck without incremental, so the test needs fixing, and then this line goes.
+environment = { CARGO_INCREMENTAL = "0" }
 runs_on = "heavy"
 events = ["push", "manual"]
 checks = ["verify"]
