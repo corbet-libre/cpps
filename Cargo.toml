@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.88"
 description = "Privacy Pass verification and caller-owned atomic token consumption"
 license = "LGPL-3.0-only WITH LGPL-3.0-linking-exception"
-repository = "https://git.corbet.ch/corbet-foss/cpps"
+repository = "https://git.corbet.ch/corbet-libre/cpps"
 readme = "README.md"
 publish = false
 include = ["Cargo.toml", "src/**", "README.md", "LICENSE", "LICENSE.md", "LICENSES/LGPL-3.0-only.txt", "LICENSES/LGPL-3.0-linking-exception.txt", "LICENSES/GPL-3.0-only.txt"]
@@ -18,7 +18,7 @@ unsafe_code = "forbid"
 missing_docs = "warn"
 
 [dependencies]
-cfbk = { git = "https://git.corbet.ch/corbet-foss/cfbk", branch = "main" }
+cfbk = { git = "https://git.corbet.ch/corbet-libre/cfbk", branch = "main" }
 privacypass = { git = "https://github.com/raphaelrobert/privacypass", branch = "main" }
 blind-rsa-signatures = "0.17"
 async-trait = "0.1"
